@@ -13,13 +13,13 @@ KIDEM_TAVANI_TABLOSU = {
     2023: 23489.83, 2022: 15371.40, 2021: 8284.51, 2020: 7117.17
 }
 
-def kesinti_ayrintisi(brut, tip="standart"):
-    dv = brut * 0.00759
+def kesinti_ayrintisi(brut_tutar, tip="standart"):
+    dv = brut_tutar * 0.00759
     if tip == "kıdem":
-        return {"dv": dv, "gv": 0.0, "sgk": 0.0, "net": brut - dv}
-    sgk = brut * 0.15
-    gv = (brut - sgk) * 0.15 # %15 gelir vergisi
-    return {"dv": dv, "gv": gv, "sgk": sgk, "net": brut - (dv + gv + sgk)}
+        return {"brut": brut_tutar, "dv": dv, "gv": 0.0, "sgk": 0.0, "net": brut_tutar - dv}
+    sgk = brut_tutar * 0.15
+    gv = (brut_tutar - sgk) * 0.15
+    return {"brut": brut_tutar, "dv": dv, "gv": gv, "sgk": sgk, "net": brut_tutar - (dv + gv + sgk)}
 
 st.set_page_config(page_title="Hukuk Robotu PRO", layout="wide")
 st.title("⚖️ Detaylı İşçilik Alacakları Bilirkişi Raporu")
@@ -28,9 +28,9 @@ with st.sidebar:
     st.header("Giriş Parametreleri")
     isim = st.text_input("İşçinin Adı Soyadı", "Onur Erol")
     g_tarih = st.date_input("İşe Giriş Tarihi", datetime(2020, 1, 15))
-    c_tarih = st.date_input("İşten Çıkış Tarihi", datetime(2024, 7, 26))
-    son_brut = st.number_input("Son Brüt Ücret (TL)", value=30000.0)
-    yan_hak = st.number_input("Aylık Giydirilmiş Ek Haklar (Brüt TL)", value=500.0)
+    c_tarih = st.date_input("İşten Çıkış Tarihi", datetime(2021, 7, 26))
+    son_brut = st.number_input("Son Brüt Ücret (TL)", value=5595.11)
+    yan_hak = st.number_input("Aylık Giydirilmiş Ek Haklar (Brüt TL)", value=350.0)
     fm_saat = st.number_input("Haftalık Fazla Mesai Saati", value=12.0)
     izin_gun = st.number_input("Kalan Yıllık İzin Günü", value=14)
     ubgt_yillik = st.number_input("Yıllık Çalışılan UBGT Günü", value=5)
@@ -40,7 +40,7 @@ if st.button("DETAYLI RAPORU OLUŞTUR", type="primary"):
     yil, ay, gun = delta.years, delta.months, delta.days
     maas_katsayisi = son_brut / ASGARI_UCRET_TABLOSU.get(c_tarih.year, 25000.0)
 
-    # 1. KIDEM, İHBAR, İZİN (Statik Hesaplar)
+    # 1. KIDEM, İHBAR, İZİN
     giydirilmis = son_brut + yan_hak
     tavan = KIDEM_TAVANI_TABLOSU.get(c_tarih.year, 41828.42)
     esas_kıdem = min(giydirilmis, tavan)
@@ -52,30 +52,27 @@ if st.button("DETAYLI RAPORU OLUŞTUR", type="primary"):
     i_res = kesinti_ayrintisi(brut_ihbar)
     z_res = kesinti_ayrintisi((son_brut / 30) * izin_gun)
 
-    # 2. FAZLA MESAİ DÖNEMSEL DÖKÜM (Alt Kademeler)
+    # 2. FAZLA MESAİ DÖNEMSEL DÖKÜM
     fm_rows = []
     for y in range(g_tarih.year, c_tarih.year + 1):
         d_asgari = ASGARI_UCRET_TABLOSU.get(y, 25000.0)
         d_brut = d_asgari * maas_katsayisi
         saatlik = (d_brut / 225) * 1.5
         
-        # O yıl kaç hafta çalışıldı?
-        baslangic = max(g_tarih, datetime(y, 1, 1).date())
-        bitis = min(c_tarih, datetime(y, 12, 31).date())
-        hafta_sayisi = ((bitis - baslangic).days / 7)
+        bas = max(g_tarih, datetime(y, 1, 1).date())
+        bit = min(c_tarih, datetime(y, 12, 31).date())
+        h_sayisi = max(0, (bit - bas).days / 7)
         
-        toplam_saat = hafta_sayisi * fm_saat
-        b_tutar = toplam_saat * saatlik
-        n_tutar = kesinti_ayrintisi(b_tutar)["net"]
+        b_tutar = h_sayisi * fm_saat * saatlik
+        res = kesinti_ayrintisi(b_tutar)
         
         fm_rows.append({
             "Dönem": f"{y}",
             "Maaş (Brüt)": f"{d_brut:,.2f}",
-            "Saatlik Ücret": f"{saatlik:,.2f}",
-            "Haftalık FM": f"{fm_saat}",
-            "Toplam Saat": f"{toplam_saat:,.2f}",
-            "Brüt Tutar": b_tutar,
-            "Net Tutar": n_tutar
+            "Saatlik": f"{saatlik:,.2f}",
+            "Hafta": f"{h_sayisi:.2f}",
+            "Brüt Toplam": b_tutar,
+            "Net": res['net']
         })
 
     # 3. UBGT DÖNEMSEL DÖKÜM
@@ -85,45 +82,51 @@ if st.button("DETAYLI RAPORU OLUŞTUR", type="primary"):
         d_brut = d_asgari * maas_katsayisi
         gunluk = d_brut / 30
         
-        # Yıl içindeki gün oranı
-        baslangic = max(g_tarih, datetime(y, 1, 1).date())
-        bitis = min(c_tarih, datetime(y, 12, 31).date())
-        yil_orani = (bitis - baslangic).days / 365
-        donem_gun = ubgt_yillik * yil_orani
+        bas = max(g_tarih, datetime(y, 1, 1).date())
+        bit = min(c_tarih, datetime(y, 12, 31).date())
+        yil_orani = (bit - bas).days / 365
+        d_gun = ubgt_yillik * yil_orani
         
-        b_tutar = donem_gun * gunluk
-        n_tutar = kesinti_ayrintisi(b_tutar)["net"]
+        b_tutar = d_gun * gunluk
+        res = kesinti_ayrintisi(b_tutar)
         
         ubgt_rows.append({
             "Dönem": f"{y}",
             "Günlük Ücret": f"{gunluk:,.2f}",
-            "Gün Sayısı": f"{donem_gun:,.2f}",
-            "Brüt Tutar": b_tutar,
-            "Net Tutar": n_tutar
+            "Gün": f"{d_gun:.2f}",
+            "Brüt Toplam": b_tutar,
+            "Net": res['net']
         })
 
-    # --- EKRAN ÇIKTISI ---
+    # --- RAPOR ÇIKTISI ---
     st.header("1. BİLGİLER VE SÜRE HESABI")
-    st.markdown(f"**Hizmet Süresi:** {yil} Yıl {ay} Ay {gun} Gün")
+    st.table({
+        "Parametre": ["İşçi", "Süre", "Esas Ücret", "Giydirilmiş"],
+        "Değer": [isim, f"{yil} Yıl {ay} Ay {gun} Gün", f"{son_brut:,.2f}", f"{giydirilmis:,.2f}"]
+    })
     
     st.header("2. KIDEM VE İHBAR HESABI")
     st.table(pd.DataFrame([
-        {"Alacak": "Kıdem Tazminatı", "Brüt": f"{k_res['brut']:,.2f}", "DV (%0.759)": f"{k_res['dv']:,.2f}", "Net": f"{k_res['net']:,.2f}"},
-        {"Alacak": "İhbar Tazminatı", "Brüt": f"{i_res['brut']:,.2f}", "Kesintiler": f"{i_res['gv']+i_res['sgk']+i_res['dv']:,.2f}", "Net": f"{i_res['net']:,.2f}"}
+        {"Alacak": "Kıdem Tazminatı", "Brüt": f"{k_res['brut']:,.2f}", "Vergi": f"{k_res['dv']:,.2f}", "Net": f"{k_res['net']:,.2f}"},
+        {"Alacak": "İhbar Tazminatı", "Brüt": f"{i_res['brut']:,.2f}", "Vergi": f"{i_res['gv']+i_res['dv']+i_res['sgk']:,.2f}", "Net": f"{i_res['net']:,.2f}"}
     ]))
 
     st.header("3. FAZLA MESAİ DÖNEMSEL HESAP TABLOSU")
     df_fm = pd.DataFrame(fm_rows)
-    st.table(df_fm)
-    st.write(f"**Toplam FM Brüt:** {sum(df_fm['Brüt Tutar']):,.2f} TL | **Toplam FM Net:** {sum(df_fm['Net Tutar']):,.2f} TL")
+    st.table(df_fm.assign(
+        **{"Brüt Toplam": df_fm["Brüt Toplam"].map("{:,.2f}".format),
+           "Net": df_fm["Net"].map("{:,.2f}".format)}
+    ))
 
     st.header("4. UBGT DÖNEMSEL HESAP TABLOSU")
     df_ubgt = pd.DataFrame(ubgt_rows)
-    st.table(df_ubgt)
-    st.write(f"**Toplam UBGT Brüt:** {sum(df_ubgt['Brüt Tutar']):,.2f} TL | **Toplam UBGT Net:** {sum(df_ubgt['Net Tutar']):,.2f} TL")
+    st.table(df_ubgt.assign(
+        **{"Brüt Toplam": df_ubgt["Brüt Toplam"].map("{:,.2f}".format),
+           "Net": df_ubgt["Net"].map("{:,.2f}".format)}
+    ))
 
     st.header("5. SONUÇ İCMAL TABLOSU")
-    toplam_brut = k_res['brut'] + i_res['brut'] + z_res['brut'] + sum(df_fm['Brüt Tutar']) + sum(df_ubgt['Brüt Tutar'])
-    toplam_net = k_res['net'] + i_res['net'] + z_res['net'] + sum(df_fm['Net Tutar']) + sum(df_ubgt['Net Tutar'])
+    t_brut = k_res['brut'] + i_res['brut'] + z_res['brut'] + sum(df_fm['Brüt Toplam'].apply(lambda x: float(x.replace(',','')))) + sum(df_ubgt['Brüt Toplam'].apply(lambda x: float(x.replace(',',''))))
+    t_net = k_res['net'] + i_res['net'] + z_res['net'] + sum(df_fm['Net'].apply(lambda x: float(x.replace(',','')))) + sum(df_ubgt['Net'].apply(lambda x: float(x.replace(',',''))))
     
-    st.success(f"### GENEL TOPLAM NET: {toplam_net:,.2f} TL")
+    st.success(f"### GENEL TOPLAM NET: {t_net:,.2f} TL")
