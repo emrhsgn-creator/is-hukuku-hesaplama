@@ -36,11 +36,12 @@ with st.sidebar:
     ubgt_yillik = st.number_input("Yıllık Çalışılan UBGT Günü", value=5)
 
 if st.button("DETAYLI RAPORU OLUŞTUR", type="primary"):
+    # 1. TEMEL SÜRE HESAPLARI
     delta = relativedelta(c_tarih, g_tarih)
     yil, ay, gun = delta.years, delta.months, delta.days
     maas_katsayisi = son_brut / ASGARI_UCRET_TABLOSU.get(c_tarih.year, 25000.0)
 
-    # 1. KIDEM, İHBAR, İZİN
+    # 2. KIDEM, İHBAR, İZİN
     giydirilmis = son_brut + yan_hak
     tavan = KIDEM_TAVANI_TABLOSU.get(c_tarih.year, 41828.42)
     esas_kıdem = min(giydirilmis, tavan)
@@ -50,10 +51,14 @@ if st.button("DETAYLI RAPORU OLUŞTUR", type="primary"):
     hafta = 2 if (c_tarih-g_tarih).days < 180 else 4 if (c_tarih-g_tarih).days < 540 else 6 if (c_tarih-g_tarih).days < 1080 else 8
     brut_ihbar = (son_brut / 30) * (hafta * 7)
     i_res = kesinti_ayrintisi(brut_ihbar)
-    z_res = kesinti_ayrintisi((son_brut / 30) * izin_gun)
+    
+    brut_izin = (son_brut / 30) * izin_gun
+    z_res = kesinti_ayrintisi(brut_izin)
 
-    # 2. FAZLA MESAİ DÖNEMSEL DÖKÜM
+    # 3. FAZLA MESAİ DÖNEMSEL DÖKÜM
     fm_rows = []
+    total_fm_brut = 0
+    total_fm_net = 0
     for y in range(g_tarih.year, c_tarih.year + 1):
         d_asgari = ASGARI_UCRET_TABLOSU.get(y, 25000.0)
         d_brut = d_asgari * maas_katsayisi
@@ -66,6 +71,9 @@ if st.button("DETAYLI RAPORU OLUŞTUR", type="primary"):
         b_tutar = h_sayisi * fm_saat * saatlik
         res = kesinti_ayrintisi(b_tutar)
         
+        total_fm_brut += b_tutar
+        total_fm_net += res['net']
+        
         fm_rows.append({
             "Dönem": f"{y}",
             "Maaş (Brüt)": f"{d_brut:,.2f}",
@@ -75,8 +83,10 @@ if st.button("DETAYLI RAPORU OLUŞTUR", type="primary"):
             "Net": res['net']
         })
 
-    # 3. UBGT DÖNEMSEL DÖKÜM
+    # 4. UBGT DÖNEMSEL DÖKÜM
     ubgt_rows = []
+    total_ubgt_brut = 0
+    total_ubgt_net = 0
     for y in range(g_tarih.year, c_tarih.year + 1):
         d_asgari = ASGARI_UCRET_TABLOSU.get(y, 25000.0)
         d_brut = d_asgari * maas_katsayisi
@@ -90,43 +100,56 @@ if st.button("DETAYLI RAPORU OLUŞTUR", type="primary"):
         b_tutar = d_gun * gunluk
         res = kesinti_ayrintisi(b_tutar)
         
+        total_ubgt_brut += b_tutar
+        total_ubgt_net += res['net']
+        
         ubgt_rows.append({
             "Dönem": f"{y}",
-            "Günlük Ücret": f"{gunluk:,.2f}",
-            "Gün": f"{d_gun:.2f}",
+            "Günlük": f"{gunluk:,.2f}",
+            "Gün Sayısı": f"{d_gun:.2f}",
             "Brüt Toplam": b_tutar,
             "Net": res['net']
         })
 
-    # --- RAPOR ÇIKTISI ---
+    # --- GÖRSEL ÇIKTILAR ---
     st.header("1. BİLGİLER VE SÜRE HESABI")
-    st.table({
-        "Parametre": ["İşçi", "Süre", "Esas Ücret", "Giydirilmiş"],
-        "Değer": [isim, f"{yil} Yıl {ay} Ay {gun} Gün", f"{son_brut:,.2f}", f"{giydirilmis:,.2f}"]
-    })
+    st.markdown(f"**Hizmet Süresi:** {yil} Yıl {ay} Ay {gun} Gün")
     
     st.header("2. KIDEM VE İHBAR HESABI")
     st.table(pd.DataFrame([
         {"Alacak": "Kıdem Tazminatı", "Brüt": f"{k_res['brut']:,.2f}", "Vergi": f"{k_res['dv']:,.2f}", "Net": f"{k_res['net']:,.2f}"},
-        {"Alacak": "İhbar Tazminatı", "Brüt": f"{i_res['brut']:,.2f}", "Vergi": f"{i_res['gv']+i_res['dv']+i_res['sgk']:,.2f}", "Net": f"{i_res['net']:,.2f}"}
+        {"Alacak": "İhbar Tazminatı", "Brüt": f"{i_res['brut']:,.2f}", "Vergi": f"{i_res['gv']+i_res['dv']+i_res['sgk']:,.2f}", "Net": f"{i_res['net']:,.2f}"},
+        {"Alacak": "Yıllık İzin Ücreti", "Brüt": f"{z_res['brut']:,.2f}", "Vergi": f"{z_res['gv']+z_res['dv']+z_res['sgk']:,.2f}", "Net": f"{z_res['net']:,.2f}"}
     ]))
 
     st.header("3. FAZLA MESAİ DÖNEMSEL HESAP TABLOSU")
     df_fm = pd.DataFrame(fm_rows)
-    st.table(df_fm.assign(
-        **{"Brüt Toplam": df_fm["Brüt Toplam"].map("{:,.2f}".format),
-           "Net": df_fm["Net"].map("{:,.2f}".format)}
-    ))
+    # Görüntüleme için formatla
+    df_fm_disp = df_fm.copy()
+    df_fm_disp["Brüt Toplam"] = df_fm_disp["Brüt Toplam"].map("{:,.2f}".format)
+    df_fm_disp["Net"] = df_fm_disp["Net"].map("{:,.2f}".format)
+    st.table(df_fm_disp)
+    st.info(f"Fazla Mesai Toplam Net: {total_fm_net:,.2f} TL")
 
     st.header("4. UBGT DÖNEMSEL HESAP TABLOSU")
     df_ubgt = pd.DataFrame(ubgt_rows)
-    st.table(df_ubgt.assign(
-        **{"Brüt Toplam": df_ubgt["Brüt Toplam"].map("{:,.2f}".format),
-           "Net": df_ubgt["Net"].map("{:,.2f}".format)}
-    ))
+    # Görüntüleme için formatla
+    df_ubgt_disp = df_ubgt.copy()
+    df_ubgt_disp["Brüt Toplam"] = df_ubgt_disp["Brüt Toplam"].map("{:,.2f}".format)
+    df_ubgt_disp["Net"] = df_ubgt_disp["Net"].map("{:,.2f}".format)
+    st.table(df_ubgt_disp)
+    st.info(f"UBGT Toplam Net: {total_ubgt_net:,.2f} TL")
 
     st.header("5. SONUÇ İCMAL TABLOSU")
-    t_brut = k_res['brut'] + i_res['brut'] + z_res['brut'] + sum(df_fm['Brüt Toplam'].apply(lambda x: float(x.replace(',','')))) + sum(df_ubgt['Brüt Toplam'].apply(lambda x: float(x.replace(',',''))))
-    t_net = k_res['net'] + i_res['net'] + z_res['net'] + sum(df_fm['Net'].apply(lambda x: float(x.replace(',','')))) + sum(df_ubgt['Net'].apply(lambda x: float(x.replace(',',''))))
+    icmal_net = k_res['net'] + i_res['net'] + z_res['net'] + total_fm_net + total_ubgt_net
+    icmal_brut = k_res['brut'] + i_res['brut'] + z_res['brut'] + total_fm_brut + total_ubgt_brut
     
-    st.success(f"### GENEL TOPLAM NET: {t_net:,.2f} TL")
+    st.table(pd.DataFrame([
+        {"Alacak Kalemi": "Kıdem Tazminatı", "Net Tutar": f"{k_res['net']:,.2f} TL"},
+        {"Alacak Kalemi": "İhbar Tazminatı", "Net Tutar": f"{i_res['net']:,.2f} TL"},
+        {"Alacak Kalemi": "Yıllık İzin Ücreti", "Net Tutar": f"{z_res['net']:,.2f} TL"},
+        {"Alacak Kalemi": "Fazla Mesai Ücreti", "Net Tutar": f"{total_fm_net:,.2f} TL"},
+        {"Alacak Kalemi": "UBGT Ücreti", "Net Tutar": f"{total_ubgt_net:,.2f} TL"},
+        {"Alacak Kalemi": "GENEL TOPLAM", "Net Tutar": f"**{icmal_net:,.2f} TL**"}
+    ]))
+    st.success(f"### ÖDENECEK TOPLAM NET: {icmal_net:,.2f} TL")
