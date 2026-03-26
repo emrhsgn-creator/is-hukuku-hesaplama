@@ -1,3 +1,4 @@
 streamlit
 python-dateutil
 pandas
+python-docx
