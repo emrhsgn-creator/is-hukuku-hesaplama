@@ -39,31 +39,34 @@ with st.sidebar:
     ubgt_yillik = st.number_input("Yıllık Çalışılan UBGT Günü", value=5)
 
 if st.button("HESAPLA VE DETAYLI RAPORU OLUŞTUR", type="primary"):
-    # --- 1. ÖNCELİKLİ HESAPLAMALAR (SABİTLER) ---
+    # --- 1. ÖNCELİKLİ HESAPLAMALAR ---
     delta = relativedelta(c_tarih, g_tarih)
     yil, ay, gun = delta.years, delta.months, delta.days
-    toplam_gun = (c_tarih - g_tarih).days
+    toplam_gun_sayisi = (c_tarih - g_tarih).days
     
     giydirilmis_brut = son_brut + yemek_ucreti
     tavan_tutari = KIDEM_TAVANI_TABLOSU.get(c_tarih.year, 41828.42)
     esas_kidem_ucret = min(giydirilmis_brut, tavan_tutari)
-    maas_orani = son_brut / ASGARI_UCRET_TABLOSU.get(c_tarih.year, 3577.50)
+    donem_asgari = ASGARI_UCRET_TABLOSU.get(c_tarih.year, 3577.50)
+    maas_orani = son_brut / donem_asgari
     
-    # İhbar Süresi (Hafta)
-    ihbar_hafta = 2 if toplam_gun < 180 else 4 if toplam_gun < 540 else 6 if toplam_gun < 1080 else 8
+    ihbar_hafta = 2 if toplam_gun_sayisi < 180 else 4 if toplam_gun_sayisi < 540 else 6 if toplam_gun_sayisi < 1080 else 8
 
-    # --- 3. ÜCRET TESPİTİ ---
+    # --- 1. ÜCRET TESPİTİ (TAM LİSTE) ---
     st.markdown("### 3. Hesaplamalarda Kullanılacak Ücret Miktarları İle İlgili Tespit")
     ucret_data = [
         ["Brüt Ücret", format_tl(son_brut)],
         ["Yemek Ücreti", format_tl(yemek_ucreti)],
         ["Giydirilmiş Brüt Ücret", format_tl(giydirilmis_brut)],
+        ["Kıdem Tazminatı Tavan Tutarı", format_tl(tavan_tutari)],
         ["Kıdem Tazminatına Esas Ücret", format_tl(esas_kidem_ucret)],
-        ["Asgari Ücrete Oranı", "{:.5f}".format(maas_orani).replace(".", ",")]
+        ["İhbar Tazminatına Esas Ücret", format_tl(son_brut)],
+        ["Dönem Asgari Ücret (" + str(c_tarih.year) + ")", format_tl(donem_asgari)],
+        ["Brüt Ücretin Asgari Ücrete Oranı", "{:.5f}".format(maas_orani).replace(".", ",")]
     ]
     st.table(pd.DataFrame(ucret_data, columns=["Kalem", "Miktar"]))
 
-    # --- 4. KIDEM VE İHBAR ---
+    # --- 2. KIDEM VE İHBAR ---
     st.markdown("### 4. Kıdem ve İhbar Tazminatının Hesaplanması")
     st.caption(f"Hizmet Süresi: {yil} Yıl {ay} Ay {gun} Gün")
     
@@ -92,7 +95,7 @@ if st.button("HESAPLA VE DETAYLI RAPORU OLUŞTUR", type="primary"):
         ["**NET İHBAR**", "", "", "=", f"**{format_tl(i_res['net'])}**"]
     ]))
 
-    # --- 5. YILLIK İZİN ---
+    # --- 3. YILLIK İZİN ---
     st.markdown("### 5. Yıllık İzin Ücretinin Hesaplanması")
     b_izin = (son_brut / 30) * izin_gun
     z_res = kesinti_hesapla(b_izin)
@@ -101,7 +104,7 @@ if st.button("HESAPLA VE DETAYLI RAPORU OLUŞTUR", type="primary"):
         [format_tl(son_brut/30), f"x {izin_gun}", format_tl(b_izin), format_tl(z_res['gv']+z_res['sgk']+z_res['dv']), format_tl(z_res['net'])]
     ]))
 
-    # --- 6. FAZLA MESAİ (DETAYLI FORMÜL) ---
+    # --- 4. FAZLA MESAİ ---
     st.markdown("### 6. Fazla Mesai Ücretinin Hesaplanması")
     fm_brut_total = 0
     fm_rows = []
@@ -109,45 +112,35 @@ if st.button("HESAPLA VE DETAYLI RAPORU OLUŞTUR", type="primary"):
         d_asgari = ASGARI_UCRET_TABLOSU.get(y, 25000.0)
         d_maas = d_asgari * maas_orani
         zamli_saatlik = (d_maas / 225) * 1.5
-        
-        bas = max(g_tarih, datetime(y, 1, 1).date())
-        bit = min(c_tarih, datetime(y, 12, 31).date())
+        bas = max(g_tarih, datetime(y, 1, 1).date()); bit = min(c_tarih, datetime(y, 12, 31).date())
         h_say = max(0, (bit - bas).days / 7)
         b_fm = h_say * fm_saat * zamli_saatlik
         fm_brut_total += b_fm
-        
         fm_rows.append({
             "Dönem": f"{y}",
-            "Saatlik Zamlı Ücret Hesabı": f"({format_tl(d_maas)} / 225) * 1,5 = {format_tl(zamli_saatlik)}",
+            "Saatlik Ücret Hesabı": f"({format_tl(d_maas)} / 225) * 1,5 = {format_tl(zamli_saatlik)}",
             "FM Süresi Hesabı": f"{fm_saat} Saat * {h_say:.2f} Hafta",
-            "Dönem Brüt": format_tl(b_fm)
+            "Brüt Tutar": format_tl(b_fm)
         })
-    
     st.table(pd.DataFrame(fm_rows))
     fm_res = kesinti_hesapla(fm_brut_total)
 
-    # --- 6.1 UBGT ÜCRETİ (DETAYLI FORMÜL) ---
+    # --- 5. UBGT ---
     st.markdown("### 6.1 UBGT Ücretinin Hesaplanması")
     ubgt_brut_total = 0
     ubgt_rows = []
     for y in range(g_tarih.year, c_tarih.year + 1):
-        d_asgari = ASGARI_UCRET_TABLOSU.get(y, 25000.0)
-        gunluk = (d_asgari * maas_orani / 30)
-        bas = max(g_tarih, datetime(y, 1, 1).date())
-        bit = min(c_tarih, datetime(y, 12, 31).date())
+        d_asgari = ASGARI_UCRET_TABLOSU.get(y, 25000.0); d_maas = d_asgari * maas_orani
+        gunluk = d_maas / 30
+        bas = max(g_tarih, datetime(y, 1, 1).date()); bit = min(c_tarih, datetime(y, 12, 31).date())
         d_gun = ubgt_yillik * ((bit - bas).days / 365)
         b_ubgt = d_gun * gunluk
         ubgt_brut_total += b_ubgt
-        ubgt_rows.append({
-            "Dönem": f"{y}",
-            "Günlük Ücret Hesabı": f"{format_tl(d_asgari * maas_orani)} / 30 = {format_tl(gunluk)}",
-            "Gün Sayısı": f"{d_gun:.2f} Gün",
-            "Dönem Brüt": format_tl(b_ubgt)
-        })
+        ubgt_rows.append({"Dönem": f"{y}", "Günlük Ücret Hesabı": f"{format_tl(d_maas)} / 30 = {format_tl(gunluk)}", "Gün Sayısı": f"{d_gun:.2f} Gün", "Brüt Tutar": format_tl(b_ubgt)})
     st.table(pd.DataFrame(ubgt_rows))
     u_res = kesinti_hesapla(ubgt_brut_total)
 
-    # --- 7. SONUÇ VE İCMAL (ÖZET) ---
+    # --- 6. SONUÇ VE İCMAL ---
     st.markdown("### 7. Sonuç ve İcmal (Özet) Tablosu")
     icmal_data = [
         ["Kıdem Tazminatı", format_tl(b_kidem), format_tl(k_res['dv']), format_tl(k_res['net'])],
