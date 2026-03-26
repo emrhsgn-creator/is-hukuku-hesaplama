@@ -53,7 +53,7 @@ if st.button("HESAPLA VE DETAYLI RAPORU OLUŞTUR", type="primary"):
     ihbar_hafta = 2 if toplam_gun_sayisi < 180 else 4 if toplam_gun_sayisi < 540 else 6 if toplam_gun_sayisi < 1080 else 8
 
     # --- 1. ÜCRET TESPİTİ (TAM LİSTE) ---
-    st.markdown("### 3. Hesaplamalarda Kullanılacak Ücret Miktarları İle İlgili Tespit")
+    st.markdown("### 1. Hesaplamalarda Kullanılacak Ücret Miktarları İle İlgili Tespit")
     ucret_data = [
         ["Brüt Ücret", format_tl(son_brut)],
         ["Yemek Ücreti", format_tl(yemek_ucreti)],
@@ -67,7 +67,7 @@ if st.button("HESAPLA VE DETAYLI RAPORU OLUŞTUR", type="primary"):
     st.table(pd.DataFrame(ucret_data, columns=["Kalem", "Miktar"]))
 
     # --- 2. KIDEM VE İHBAR ---
-    st.markdown("### 4. Kıdem ve İhbar Tazminatının Hesaplanması")
+    st.markdown("### 2. Kıdem ve İhbar Tazminatının Hesaplanması")
     st.caption(f"Hizmet Süresi: {yil} Yıl {ay} Ay {gun} Gün")
     
     k_yil_t = esas_kidem_ucret * yil
@@ -96,7 +96,7 @@ if st.button("HESAPLA VE DETAYLI RAPORU OLUŞTUR", type="primary"):
     ]))
 
     # --- 3. YILLIK İZİN ---
-    st.markdown("### 5. Yıllık İzin Ücretinin Hesaplanması")
+    st.markdown("### 3. Yıllık İzin Ücretinin Hesaplanması")
     b_izin = (son_brut / 30) * izin_gun
     z_res = kesinti_hesapla(b_izin)
     st.table(pd.DataFrame([
@@ -105,7 +105,7 @@ if st.button("HESAPLA VE DETAYLI RAPORU OLUŞTUR", type="primary"):
     ]))
 
     # --- 4. FAZLA MESAİ ---
-    st.markdown("### 6. Fazla Mesai Ücretinin Hesaplanması")
+    st.markdown("### 4. Fazla Mesai Ücretinin Hesaplanması")
     fm_brut_total = 0
     fm_rows = []
     for y in range(g_tarih.year, c_tarih.year + 1):
@@ -126,7 +126,7 @@ if st.button("HESAPLA VE DETAYLI RAPORU OLUŞTUR", type="primary"):
     fm_res = kesinti_hesapla(fm_brut_total)
 
     # --- 5. UBGT ---
-    st.markdown("### 6.1 UBGT Ücretinin Hesaplanması")
+    st.markdown("### 5. UBGT Ücretinin Hesaplanması")
     ubgt_brut_total = 0
     ubgt_rows = []
     for y in range(g_tarih.year, c_tarih.year + 1):
@@ -141,7 +141,7 @@ if st.button("HESAPLA VE DETAYLI RAPORU OLUŞTUR", type="primary"):
     u_res = kesinti_hesapla(ubgt_brut_total)
 
     # --- 6. SONUÇ VE İCMAL ---
-    st.markdown("### 7. Sonuç ve İcmal (Özet) Tablosu")
+    st.markdown("### 6. Sonuç ve İcmal (Özet) Tablosu")
     icmal_data = [
         ["Kıdem Tazminatı", format_tl(b_kidem), format_tl(k_res['dv']), format_tl(k_res['net'])],
         ["İhbar Tazminatı", format_tl(b_ihbar), format_tl(i_res['gv']+i_res['dv']), format_tl(i_res['net'])],
