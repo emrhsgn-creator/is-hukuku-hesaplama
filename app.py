@@ -24,7 +24,7 @@ def kesinti_hesapla(brut, tip="standart"):
     gv = (brut - sgk) * 0.15 
     return {"brut": brut, "dv": dv, "gv": gv, "sgk": sgk, "net": brut - (dv + gv + sgk)}
 
-st.set_page_config(page_title="Bilirkişi Raporu Hazırlığı", layout="centered")
+st.set_page_config(page_title="Bilirkişi Raporu Hazırlığı", layout="wide")
 st.markdown("<h2 style='text-align: center;'>İşçilik Alacakları Bilirkişi Raporu Hazırlığı</h2>", unsafe_allow_html=True)
 
 with st.sidebar:
@@ -48,7 +48,7 @@ if st.button("HESAPLA VE DETAYLI RAPORU OLUŞTUR", type="primary"):
 
     # --- 3. ÜCRET TESPİTİ ---
     st.markdown("### 3. Hesaplamalarda Kullanılacak Ücret Miktarları İle İlgili Tespit")
-    ucret_data = [["Brüt Ücret", format_tl(son_brut)], ["Yemek Ücreti", format_tl(yemek_ucreti)], ["Giydirilmiş Brüt Ücret", format_tl(giydirilmis_brut)], ["Kıdem Tazminatı Tavan Tutarı", format_tl(tavan_tutari)], ["Kıdem Tazminatına Esas Ücret", format_tl(esas_kidem_ucret)], ["İhbar Tazminatına Esas Ücret", format_tl(son_brut)], ["Brüt Ücretin Asgari Ücrete Oranı", "{:.5f}".format(maas_orani).replace(".", ",")]]
+    ucret_data = [["Brüt Ücret", format_tl(son_brut)], ["Yemek Ücreti", format_tl(yemek_ucreti)], ["Giydirilmiş Brüt Ücret", format_tl(giydirilmis_brut)], ["Kıdem Tazminatı Tavan Tutarı", format_tl(tavan_tutari)], ["Kıdem Tazminatına Esas Ücret", format_tl(esas_kidem_ucret)], ["İhbar Tazminatına Esas Ücret", format_tl(son_brut)], ["Asgari Ücrete Oranı", "{:.5f}".format(maas_orani).replace(".", ",")]]
     st.table(pd.DataFrame(ucret_data, columns=["Kalem", "Miktar"]))
 
     # --- 4. KIDEM VE İHBAR ---
@@ -58,61 +58,67 @@ if st.button("HESAPLA VE DETAYLI RAPORU OLUŞTUR", type="primary"):
     k_gun_t = (esas_kidem_ucret / 365) * gun
     b_kidem = k_yil_t + k_ay_t + k_gun_t
     k_res = kesinti_hesapla(b_kidem, "kıdem")
-    st.markdown("**Kıdem Tazminatı:**")
-    st.table(pd.DataFrame([[format_tl(esas_kidem_ucret), "x", f"{yil} Yıl", "=", format_tl(k_yil_t)], [f"{format_tl(esas_kidem_ucret)} / 12", "x", f"{ay} Ay", "=", format_tl(k_ay_t)], [f"{format_tl(esas_kidem_ucret)} / 365", "x", f"{gun} Gün", "=", format_tl(k_gun_t)], ["**TOPLAM**", "", "", "", f"**{format_tl(b_kidem)}**"], ["Damga Vergisi", "Binde 7,59", "", "=", format_tl(k_res['dv'])], ["**Net Kıdem**", "", "", "", f"**{format_tl(k_res['net'])}**"]]))
+    st.table(pd.DataFrame([[format_tl(esas_kidem_ucret), "x", f"{yil} Yıl", "=", format_tl(k_yil_t)], [f"{format_tl(esas_kidem_ucret)} / 12", "x", f"{ay} Ay", "=", format_tl(k_ay_t)], [f"{format_tl(esas_kidem_ucret)} / 365", "x", f"{gun} Gün", "=", format_tl(k_gun_t)], ["**TOPLAM**", "", "", "", f"**{format_tl(b_kidem)}**"]]))
 
-    hafta = 2 if (c_tarih-g_tarih).days < 180 else 4 if (c_tarih-g_tarih).days < 540 else 6 if (c_tarih-g_tarih).days < 1080 else 8
-    b_ihbar = (son_brut / 30) * 7 * hafta
-    i_res = kesinti_hesapla(b_ihbar)
-    st.markdown(f"**İhbar Tazminatı ({hafta} Hafta):**")
-    st.table(pd.DataFrame([[f"{format_tl(son_brut)} / 30", "x", "7 Gün", f"x {hafta} Hafta =", format_tl(b_ihbar)], ["Kesintiler (GV+DV)", "Toplam", "", "=", format_tl(i_res['gv']+i_res['dv']+i_res['sgk'])], ["**NET İHBAR**", "", "", "=", f"**{format_tl(i_res['net'])}**"]]))
-
-    # --- 5. YILLIK İZİN ---
-    st.markdown("### 5. Yıllık İzin Ücretinin Hesaplanması")
-    b_izin = (son_brut / 30) * izin_gun
-    z_res = kesinti_hesapla(b_izin)
-    st.table(pd.DataFrame([["Günlük Brüt", "Gün Sayısı", "Brüt Alacak", "Kesintiler", "Net Alacak"], [format_tl(son_brut/30), f"x {izin_gun}", format_tl(b_izin), format_tl(z_res['gv']+z_res['sgk']+z_res['dv']), format_tl(z_res['net'])]]))
-
-    # --- 6. FAZLA MESAİ (DETAYLI FORMÜL) ---
+    # --- 6. FAZLA MESAİ (DETAYLI FORMÜL VE SAATLİK ÜCRET GEÇİŞİ) ---
     st.markdown("### 6. Fazla Mesai Ücretinin Hesaplanması")
     fm_brut_total = 0
     fm_rows = []
     for y in range(g_tarih.year, c_tarih.year + 1):
         d_asgari = ASGARI_UCRET_TABLOSU.get(y, 25000.0)
-        saatlik = (d_asgari * maas_orani / 225) * 1.5
+        d_maas = d_asgari * maas_orani
+        normal_saatlik = d_maas / 225
+        zamli_saatlik = normal_saatlik * 1.5
+        
         bas = max(g_tarih, datetime(y, 1, 1).date())
         bit = min(c_tarih, datetime(y, 12, 31).date())
         h_say = max(0, (bit - bas).days / 7)
-        b_fm = h_say * fm_saat * saatlik
+        b_fm = h_say * fm_saat * zamli_saatlik
         fm_brut_total += b_fm
-        fm_rows.append([f"{y} Dönemi", f"{format_tl(saatlik)} x {fm_saat} Saat x {h_say:.2f} Hafta", format_tl(b_fm)])
+        
+        # Matematiksel döküm satırı
+        fm_rows.append({
+            "Dönem": f"{y}",
+            "Aylık Brüt": format_tl(d_maas),
+            "Saatlik Ücret Hesabı": f"({format_tl(d_maas)} / 225) * 1,5",
+            "Zamlı Saatlik": format_tl(zamli_saatlik),
+            "FM Süresi": f"{h_say:.2f} Hafta * {fm_saat} Saat",
+            "Brüt Tutar": format_tl(b_fm)
+        })
     
-    st.table(pd.DataFrame(fm_rows, columns=["Çalışma Dönemi", "Hesaplama (Saatlik x Haftalık Saat x Hafta Sayısı)", "Brüt Tutar"]))
+    st.table(pd.DataFrame(fm_rows))
     fm_res = kesinti_hesapla(fm_brut_total)
-    st.info(f"Net Fazla Mesai Alacağı: {format_tl(fm_res['net'])}")
 
-    # --- 6.1 UBGT (DETAYLI FORMÜL) ---
-    st.markdown("### 6.1 UBGT (Ulusal Bayram ve Genel Tatil) Ücreti Hesabı")
+    # --- 6.1 UBGT (DÖNEMSEL DÖKÜM) ---
+    st.markdown("### 6.1 UBGT Ücretinin Hesaplanması")
     ubgt_brut_total = 0
     ubgt_rows = []
     for y in range(g_tarih.year, c_tarih.year + 1):
         d_asgari = ASGARI_UCRET_TABLOSU.get(y, 25000.0)
-        gunluk = (d_asgari * maas_orani / 30)
+        d_maas = d_asgari * maas_orani
+        gunluk = d_maas / 30
         bas = max(g_tarih, datetime(y, 1, 1).date())
         bit = min(c_tarih, datetime(y, 12, 31).date())
-        oran = (bit - bas).days / 365
-        d_gun = ubgt_yillik * oran
+        d_gun = ubgt_yillik * ((bit - bas).days / 365)
         b_ubgt = d_gun * gunluk
         ubgt_brut_total += b_ubgt
-        ubgt_rows.append([f"{y} Dönemi", f"{format_tl(gunluk)} x {d_gun:.2f} Gün", format_tl(b_ubgt)])
-
-    st.table(pd.DataFrame(ubgt_rows, columns=["Çalışma Dönemi", "Hesaplama (Günlük Ücret x Gün Sayısı)", "Brüt Tutar"]))
+        ubgt_rows.append({
+            "Dönem": f"{y}",
+            "Günlük Ücret": f"{format_tl(d_maas)} / 30 = {format_tl(gunluk)}",
+            "Gün Sayısı": f"{d_gun:.2f} Gün",
+            "Brüt Tutar": format_tl(b_ubgt)
+        })
+    st.table(pd.DataFrame(ubgt_rows))
     u_res = kesinti_hesapla(ubgt_brut_total)
-    st.info(f"Net UBGT Alacağı: {format_tl(u_res['net'])}")
 
     # --- 7. SONUÇ VE İCMAL ---
     st.markdown("### 7. Sonuç ve İcmal (Özet) Tablosu")
-    icmal_rows = [
+    b_ihbar = (son_brut / 30) * 7 * hafta
+    i_res = kesinti_hesapla(b_ihbar)
+    b_izin = (son_brut / 30) * izin_gun
+    z_res = kesinti_hesapla(b_izin)
+    
+    icmal_data = [
         ["Kıdem Tazminatı", format_tl(b_kidem), format_tl(k_res['dv']), format_tl(k_res['net'])],
         ["İhbar Tazminatı", format_tl(b_ihbar), format_tl(i_res['gv']+i_res['dv']), format_tl(i_res['net'])],
         ["Yıllık İzin Ücreti", format_tl(b_izin), format_tl(z_res['gv']+z_res['sgk']+z_res['dv']), format_tl(z_res['net'])],
@@ -120,4 +126,4 @@ if st.button("HESAPLA VE DETAYLI RAPORU OLUŞTUR", type="primary"):
         ["UBGT Ücreti", format_tl(ubgt_brut_total), format_tl(u_res['gv']+u_res['sgk']+u_res['dv']), format_tl(u_res['net'])],
         ["**GENEL TOPLAM**", "**" + format_tl(b_kidem+b_ihbar+b_izin+fm_brut_total+ubgt_brut_total) + "**", "-", "**" + format_tl(k_res['net']+i_res['net']+z_res['net']+fm_res['net']+u_res['net']) + "**"]
     ]
-    st.table(pd.DataFrame(icmal_rows, columns=["Alacak Kalemi", "Brüt Tutar", "Kesintiler", "Net Ödenecek"]))
+    st.table(pd.DataFrame(icmal_data, columns=["Alacak Kalemi", "Brüt Tutar", "Kesintiler", "Net Ödenecek"]))
