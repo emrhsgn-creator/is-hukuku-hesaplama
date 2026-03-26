@@ -19,13 +19,13 @@ def format_tl(value):
 def kesinti_hesapla(brut, tip="standart"):
     dv = brut * 0.00759
     if tip == "kıdem":
-        return {"dv": dv, "gv": 0.0, "sgk": 0.0, "issizlik": 0.0, "toplam": dv, "net": brut - dv}
+        return {"brut": brut, "dv": dv, "gv": 0.0, "sgk": 0.0, "issizlik": 0.0, "toplam": dv, "net": brut - dv}
     
     sgk = brut * 0.14
     issizlik = brut * 0.01
     gv = (brut - (sgk + issizlik)) * 0.15 
     toplam = dv + sgk + gv + issizlik
-    return {"dv": dv, "gv": gv, "sgk": sgk, "issizlik": issizlik, "toplam": toplam, "net": brut - toplam}
+    return {"brut": brut, "dv": dv, "gv": gv, "sgk": sgk, "issizlik": issizlik, "toplam": toplam, "net": brut - toplam}
 
 st.set_page_config(page_title="Bilirkişi Raporu Pro", layout="wide")
 st.markdown("<h2 style='text-align: center;'>⚖️ İşçilik Alacakları Bilirkişi Raporu</h2>", unsafe_allow_html=True)
@@ -71,7 +71,6 @@ if st.button("HESAPLA VE DETAYLI RAPORU OLUŞTUR", type="primary"):
     st.markdown("### 4. Kıdem ve İhbar Tazminatının Hesaplanması")
     st.caption(f"Hizmet Süresi: {yil} Yıl {ay} Ay {gun} Gün")
     
-    # KIDEM
     b_kidem = (esas_kidem * yil) + (esas_kidem / 12 * ay) + (esas_kidem / 365 * gun)
     k_res = kesinti_hesapla(b_kidem, "kıdem")
     st.markdown("**Kıdem Tazminatı Hesabı:**")
@@ -84,7 +83,6 @@ if st.button("HESAPLA VE DETAYLI RAPORU OLUŞTUR", type="primary"):
         ["**NET KIDEM**", "", "", "", f"**{format_tl(k_res['net'])}**"]
     ]))
 
-    # İHBAR
     b_ihbar = (son_brut / 30) * 7 * ihbar_hafta
     i_res = kesinti_hesapla(b_ihbar)
     st.markdown(f"**İhbar Tazminatı Hesabı ({ihbar_hafta} Hafta):**")
@@ -108,36 +106,48 @@ if st.button("HESAPLA VE DETAYLI RAPORU OLUŞTUR", type="primary"):
         ["**NET YILLIK İZİN**", "", "=", f"**{format_tl(z_res['net'])}**"]
     ]))
 
-    # --- 6. FAZLA MESAİ VE UBGT ---
-    st.markdown("### 6. Fazla Mesai ve UBGT Hesabı")
+    # --- 6. FAZLA MESAİ ---
+    st.markdown("### 6. Fazla Mesai Ücretinin Hesaplanması")
     fm_brut, ubgt_brut = 0, 0
     fm_rows, ubgt_rows = [], []
     for y in range(g_tarih.year, c_tarih.year + 1):
         d_maas = ASGARI_UCRET_TABLOSU.get(y, 25000.0) * maas_orani
-        # FM
         sz = (d_maas / 225) * 1.5
-        bas = max(g_tarih, datetime(y, 1, 1).date())
-        bit = min(c_tarih, datetime(y, 12, 31).date())
+        bas = max(g_tarih, datetime(y, 1, 1).date()); bit = min(c_tarih, datetime(y, 12, 31).date())
         h_say = max(0, (bit - bas).days / 7)
         donem_fm = h_say * fm_saat * sz
         fm_brut += donem_fm
         fm_rows.append([f"{y}", f"({format_tl(d_maas)}/225)*1,5", f"{fm_saat} Saat * {h_say:.2f} Hafta", format_tl(donem_fm)])
-        # UBGT
+        
         gunluk = d_maas / 30
         d_gun = ubgt_yillik * ((bit - bas).days / 365)
         donem_ubgt = d_gun * gunluk
         ubgt_brut += donem_ubgt
         ubgt_rows.append([f"{y}", f"{format_tl(d_maas)} / 30", f"{d_gun:.2f} Gün", format_tl(donem_ubgt)])
     
-    st.markdown("**Fazla Mesai Dönemsel Döküm:**")
     st.table(pd.DataFrame(fm_rows, columns=["Dönem", "Saatlik Zamlı", "FM Süresi", "Brüt"]))
     fm_res = kesinti_hesapla(fm_brut)
-    st.table(pd.DataFrame([["SGK+İşsz.", format_tl(fm_res['sgk']+fm_res['issizlik'])], ["Gelir Vergisi", format_tl(fm_res['gv'])], ["Damga V.", format_tl(fm_res['dv'])], ["**Net FM**", format_tl(fm_res['net'])]], columns=["Kesinti", "Tutar"]))
+    st.markdown("**Fazla Mesai Kesinti Dökümü:**")
+    st.table(pd.DataFrame([
+        ["SGK Primi (%14)", "=", format_tl(fm_res['sgk'])],
+        ["İşsizlik Sigortası (%1)", "=", format_tl(fm_res['issizlik'])],
+        ["Gelir Vergisi (%15)", "=", format_tl(fm_res['gv'])],
+        ["Damga Vergisi (Binde 7,59)", "=", format_tl(fm_res['dv'])],
+        ["**Net Fazla Mesai**", "=", f"**{format_tl(fm_res['net'])}**"]
+    ]))
 
-    st.markdown("**UBGT Dönemsel Döküm:**")
+    # --- 6.1 UBGT ---
+    st.markdown("### 6.1 UBGT Ücretinin Hesaplanması")
     st.table(pd.DataFrame(ubgt_rows, columns=["Dönem", "Günlük Ücret", "Gün Sayısı", "Brüt"]))
     u_res = kesinti_hesapla(ubgt_brut)
-    st.table(pd.DataFrame([["SGK+İşsz.", format_tl(u_res['sgk']+u_res['issizlik'])], ["Gelir Vergisi", format_tl(u_res['gv'])], ["Damga V.", format_tl(u_res['dv'])], ["**Net UBGT**", format_tl(u_res['net'])]], columns=["Kesinti", "Tutar"]))
+    st.markdown("**UBGT Kesinti Dökümü:**")
+    st.table(pd.DataFrame([
+        ["SGK Primi (%14)", "=", format_tl(u_res['sgk'])],
+        ["İşsizlik Sigortası (%1)", "=", format_tl(u_res['issizlik'])],
+        ["Gelir Vergisi (%15)", "=", format_tl(u_res['gv'])],
+        ["Damga Vergisi (Binde 7,59)", "=", format_tl(u_res['dv'])],
+        ["**Net UBGT**", "=", f"**{format_tl(u_res['net'])}**"]
+    ]))
 
     # --- 7. SONUÇ VE İCMAL ---
     st.markdown("### 7. Sonuç ve İcmal (Özet) Tablosu")
