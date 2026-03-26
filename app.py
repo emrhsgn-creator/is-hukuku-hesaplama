@@ -2,8 +2,12 @@ import streamlit as st
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import pandas as pd
+from docx import Document
+from docx.shared import Pt, Inches
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+import io
 
-# --- VERİ SETİ (GÜNCEL) ---
+# --- VERİ SETİ ---
 ASGARI_UCRET_TABLOSU = {
     2026: 25000.00, 2025: 20002.12, 2024: 17002.12, 
     2023: 13414.50, 2022: 6471.00, 2021: 3577.50, 2020: 2943.00, 2019: 2558.40
@@ -20,12 +24,40 @@ def kesinti_hesapla(brut, tip="standart"):
     dv = brut * 0.00759
     if tip == "kıdem":
         return {"brut": brut, "dv": dv, "gv": 0.0, "sgk": 0.0, "issizlik": 0.0, "toplam": dv, "net": brut - dv}
-    
     sgk = brut * 0.14
     issizlik = brut * 0.01
     gv = (brut - (sgk + issizlik)) * 0.15 
     toplam = dv + sgk + gv + issizlik
     return {"brut": brut, "dv": dv, "gv": gv, "sgk": sgk, "issizlik": issizlik, "toplam": toplam, "net": brut - toplam}
+
+# Word Dosyası Oluşturma Fonksiyonu (Tüm tabloları ekler)
+def create_docx(isim, sections):
+    doc = Document()
+    style = doc.styles['Normal']
+    font = style.font
+    font.name = 'Arial'
+    font.size = Pt(10)
+
+    title = doc.add_heading('BİLİRKİŞİ RAPORU HESAPLAMA DÖKÜMÜ', 0)
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    doc.add_paragraph(f"Davacı: {isim}")
+    doc.add_paragraph(f"Rapor Tarihi: {datetime.now().strftime('%d.%m.%Y')}")
+
+    for section_title, df in sections:
+        doc.add_heading(section_title, level=1)
+        if df is not None:
+            t = doc.add_table(rows=df.shape[0] + 1, cols=df.shape[1])
+            t.style = 'Table Grid'
+            for j in range(df.shape[1]):
+                t.cell(0, j).text = str(df.columns[j])
+            for i in range(df.shape[0]):
+                for j in range(df.shape[1]):
+                    t.cell(i + 1, j).text = str(df.values[i, j])
+        doc.add_paragraph("\n")
+
+    bio = io.BytesIO()
+    doc.save(bio)
+    return bio.getvalue()
 
 st.set_page_config(page_title="Bilirkişi Raporu Pro", layout="wide")
 st.markdown("<h2 style='text-align: center;'>⚖️ İşçilik Alacakları Bilirkişi Raporu</h2>", unsafe_allow_html=True)
@@ -42,7 +74,6 @@ with st.sidebar:
     ubgt_yillik = st.number_input("Yıllık Çalışılan UBGT Günü", value=5)
 
 if st.button("HESAPLA VE DETAYLI RAPORU OLUŞTUR", type="primary"):
-    # --- TEMEL VERİLER ---
     delta = relativedelta(c_tarih, g_tarih)
     yil, ay, gun = delta.years, delta.months, delta.days
     toplam_gun = (c_tarih - g_tarih).days
@@ -53,61 +84,33 @@ if st.button("HESAPLA VE DETAYLI RAPORU OLUŞTUR", type="primary"):
     maas_orani = son_brut / d_asgari_cikis
     ihbar_hafta = 2 if toplam_gun < 180 else 4 if toplam_gun < 540 else 6 if toplam_gun < 1080 else 8
 
-    # --- 3. ÜCRET TESPİTİ ---
+    # --- BÖLÜM 3: ÜCRET TESPİTİ ---
     st.markdown("### 3. Hesaplamalarda Kullanılacak Ücret Miktarları İle İlgili Tespit")
-    ucret_tablo = [
-        ["Brüt Ücret", format_tl(son_brut)],
-        ["Yemek Ücreti", format_tl(yemek_ucreti)],
-        ["Giydirilmiş Brüt Ücret", format_tl(giydirilmis_brut)],
-        ["Kıdem Tazminatı Tavan Tutarı", format_tl(tavan)],
-        ["Kıdem Tazminatına Esas Ücret", format_tl(esas_kidem)],
-        ["İhbar Tazminatına Esas Ücret", format_tl(son_brut)],
-        ["Dönem Asgari Ücret (" + str(c_tarih.year) + ")", format_tl(d_asgari_cikis)],
-        ["Brüt Ücretin Asgari Ücrete Oranı", "{:.5f}".format(maas_orani).replace(".", ",")]
-    ]
-    st.table(pd.DataFrame(ucret_tablo, columns=["Kalem", "Miktar"]))
+    ucret_data = [["Brüt Ücret", format_tl(son_brut)], ["Yemek Ücreti", format_tl(yemek_ucreti)], ["Giydirilmiş Brüt Ücret", format_tl(giydirilmis_brut)], ["Kıdem Tazminatı Tavan Tutarı", format_tl(tavan)], ["Kıdem Tazminatına Esas Ücret", format_tl(esas_kidem)], ["İhbar Tazminatına Esas Ücret", format_tl(son_brut)], ["Dönem Asgari Ücret (" + str(c_tarih.year) + ")", format_tl(d_asgari_cikis)], ["Brüt Ücretin Asgari Ücrete Oranı", "{:.5f}".format(maas_orani).replace(".", ",")]]
+    df_ucret = pd.DataFrame(ucret_data, columns=["Kalem", "Miktar"])
+    st.table(df_ucret)
 
-    # --- 4. KIDEM VE İHBAR ---
+    # --- BÖLÜM 4: KIDEM VE İHBAR ---
     st.markdown("### 4. Kıdem ve İhbar Tazminatının Hesaplanması")
-    st.caption(f"Hizmet Süresi: {yil} Yıl {ay} Ay {gun} Gün")
-    
     b_kidem = (esas_kidem * yil) + (esas_kidem / 12 * ay) + (esas_kidem / 365 * gun)
     k_res = kesinti_hesapla(b_kidem, "kıdem")
-    st.markdown("**Kıdem Tazminatı Hesabı:**")
-    st.table(pd.DataFrame([
-        [format_tl(esas_kidem), "x", f"{yil} Yıl", "=", format_tl(esas_kidem * yil)],
-        [f"{format_tl(esas_kidem)} / 12", "x", f"{ay} Ay", "=", format_tl(esas_kidem/12*ay)],
-        [f"{format_tl(esas_kidem)} / 365", "x", f"{gun} Gün", "=", format_tl(esas_kidem/365*gun)],
-        ["**TOPLAM BRÜT**", "", "", "", f"**{format_tl(b_kidem)}**"],
-        ["Damga Vergisi (Binde 7,59)", "", "", "=", format_tl(k_res['dv'])],
-        ["**NET KIDEM**", "", "", "", f"**{format_tl(k_res['net'])}**"]
-    ]))
+    df_kidem = pd.DataFrame([[format_tl(esas_kidem), "x", f"{yil} Yıl", "=", format_tl(esas_kidem * yil)], [f"{format_tl(esas_kidem)} / 12", "x", f"{ay} Ay", "=", format_tl(esas_kidem/12*ay)], [f"{format_tl(esas_kidem)} / 365", "x", f"{gun} Gün", "=", format_tl(esas_kidem/365*gun)], ["**TOPLAM BRÜT**", "", "", "", f"**{format_tl(b_kidem)}**"], ["Damga Vergisi (Binde 7,59)", "", "", "=", format_tl(k_res['dv'])], ["**NET KIDEM**", "", "", "", f"**{format_tl(k_res['net'])}**"]])
+    st.table(df_kidem)
 
     b_ihbar = (son_brut / 30) * 7 * ihbar_hafta
     i_res = kesinti_hesapla(b_ihbar)
-    st.markdown(f"**İhbar Tazminatı Hesabı ({ihbar_hafta} Hafta):**")
-    st.table(pd.DataFrame([
-        [f"{format_tl(son_brut)} / 30", "x", f"7 Gün x {ihbar_hafta} Hafta", "=", format_tl(b_ihbar)],
-        ["Gelir Vergisi (%15)", "", "", "=", format_tl(i_res['gv'])],
-        ["Damga Vergisi (Binde 7,59)", "", "", "=", format_tl(i_res['dv'])],
-        ["**NET İHBAR**", "", "", "", f"**{format_tl(i_res['net'])}**"]
-    ]))
+    df_ihbar = pd.DataFrame([[f"{format_tl(son_brut)} / 30", "x", f"7 Gün x {ihbar_hafta} Hafta", "=", format_tl(b_ihbar)], ["Gelir Vergisi (%15)", "", "", "=", format_tl(i_res['gv'])], ["Damga Vergisi (Binde 7,59)", "", "", "=", format_tl(i_res['dv'])], ["**NET İHBAR**", "", "", "", f"**{format_tl(i_res['net'])}**"]])
+    st.table(df_ihbar)
 
-    # --- 5. YILLIK İZİN ---
+    # --- BÖLÜM 5: YILLIK İZİN ---
     st.markdown("### 5. Yıllık İzin Ücretinin Hesaplanması")
     b_izin = (son_brut / 30) * izin_gun
     z_res = kesinti_hesapla(b_izin)
-    st.table(pd.DataFrame([
-        ["Brüt İzin Alacağı", f"{format_tl(son_brut/30)} x {izin_gun} Gün", "=", format_tl(b_izin)],
-        ["SGK Primi (%14)", "", "=", format_tl(z_res['sgk'])],
-        ["İşsizlik Sigortası (%1)", "", "=", format_tl(z_res['issizlik'])],
-        ["Gelir Vergisi (%15)", "", "=", format_tl(z_res['gv'])],
-        ["Damga Vergisi (Binde 7,59)", "", "=", format_tl(z_res['dv'])],
-        ["**NET YILLIK İZİN**", "", "=", f"**{format_tl(z_res['net'])}**"]
-    ]))
+    df_izin = pd.DataFrame([["SGK Primi (%14)", format_tl(z_res['sgk'])], ["İşsizlik Sig. (%1)", format_tl(z_res['issizlik'])], ["Gelir Vergisi (%15)", format_tl(z_res['gv'])], ["Damga Vergisi (Binde 7,59)", format_tl(z_res['dv'])], ["**NET YILLIK İZİN**", f"**{format_tl(z_res['net'])}**"]], columns=["Kesinti Kalemi", "Tutar"])
+    st.table(df_izin)
 
-    # --- 6. FAZLA MESAİ ---
-    st.markdown("### 6. Fazla Mesai Ücretinin Hesaplanması")
+    # --- BÖLÜM 6: FAZLA MESAİ VE UBGT ---
+    st.markdown("### 6. Fazla Mesai ve UBGT Hesabı")
     fm_brut, ubgt_brut = 0, 0
     fm_rows, ubgt_rows = [], []
     for y in range(g_tarih.year, c_tarih.year + 1):
@@ -125,42 +128,31 @@ if st.button("HESAPLA VE DETAYLI RAPORU OLUŞTUR", type="primary"):
         ubgt_brut += donem_ubgt
         ubgt_rows.append([f"{y}", f"{format_tl(d_maas)} / 30", f"{d_gun:.2f} Gün", format_tl(donem_ubgt)])
     
-    st.table(pd.DataFrame(fm_rows, columns=["Dönem", "Saatlik Zamlı", "FM Süresi", "Brüt"]))
+    df_fm = pd.DataFrame(fm_rows, columns=["Dönem", "Saatlik Zamlı", "FM Süresi", "Brüt"])
+    st.table(df_fm)
     fm_res = kesinti_hesapla(fm_brut)
-    st.markdown("**Fazla Mesai Kesinti Dökümü:**")
-    st.table(pd.DataFrame([
-        ["SGK Primi (%14)", "=", format_tl(fm_res['sgk'])],
-        ["İşsizlik Sigortası (%1)", "=", format_tl(fm_res['issizlik'])],
-        ["Gelir Vergisi (%15)", "=", format_tl(fm_res['gv'])],
-        ["Damga Vergisi (Binde 7,59)", "=", format_tl(fm_res['dv'])],
-        ["**Net Fazla Mesai**", "=", f"**{format_tl(fm_res['net'])}**"]
-    ]))
+    df_fm_kes = pd.DataFrame([["SGK Primi (%14)", format_tl(fm_res['sgk'])], ["İşsizlik (%1)", format_tl(fm_res['issizlik'])], ["Gelir Vergisi (%15)", format_tl(fm_res['gv'])], ["Damga Vergisi (Binde 7,59)", format_tl(fm_res['dv'])], ["**Net FM**", format_tl(fm_res['net'])]])
+    st.table(df_fm_kes)
 
-    # --- 6.1 UBGT ---
-    st.markdown("### 6.1 UBGT Ücretinin Hesaplanması")
-    st.table(pd.DataFrame(ubgt_rows, columns=["Dönem", "Günlük Ücret", "Gün Sayısı", "Brüt"]))
+    df_ubgt = pd.DataFrame(ubgt_rows, columns=["Dönem", "Günlük Ücret", "Gün Sayısı", "Brüt"])
+    st.table(df_ubgt)
     u_res = kesinti_hesapla(ubgt_brut)
-    st.markdown("**UBGT Kesinti Dökümü:**")
-    st.table(pd.DataFrame([
-        ["SGK Primi (%14)", "=", format_tl(u_res['sgk'])],
-        ["İşsizlik Sigortası (%1)", "=", format_tl(u_res['issizlik'])],
-        ["Gelir Vergisi (%15)", "=", format_tl(u_res['gv'])],
-        ["Damga Vergisi (Binde 7,59)", "=", format_tl(u_res['dv'])],
-        ["**Net UBGT**", "=", f"**{format_tl(u_res['net'])}**"]
-    ]))
+    df_ubgt_kes = pd.DataFrame([["SGK Primi (%14)", format_tl(u_res['sgk'])], ["Gelir Vergisi (%15)", format_tl(u_res['gv'])], ["Damga Vergisi (Binde 7,59)", format_tl(u_res['dv'])], ["**Net UBGT**", format_tl(u_res['net'])]])
+    st.table(df_ubgt_kes)
 
-    # --- 7. SONUÇ VE İCMAL ---
+    # --- BÖLÜM 7: SONUÇ VE İCMAL ---
     st.markdown("### 7. Sonuç ve İcmal (Özet) Tablosu")
     g_brut = b_kidem + b_ihbar + b_izin + fm_brut + ubgt_brut
     g_kes = k_res['toplam'] + i_res['toplam'] + z_res['toplam'] + fm_res['toplam'] + u_res['toplam']
     g_net = k_res['net'] + i_res['net'] + z_res['net'] + fm_res['net'] + u_res['net']
-    
-    icmal_data = [
-        ["Kıdem Tazminatı", format_tl(b_kidem), format_tl(k_res['toplam']), format_tl(k_res['net'])],
-        ["İhbar Tazminatı", format_tl(b_ihbar), format_tl(i_res['toplam']), format_tl(i_res['net'])],
-        ["Yıllık İzin Ücreti", format_tl(b_izin), format_tl(z_res['toplam']), format_tl(z_res['net'])],
-        ["Fazla Mesai Ücreti", format_tl(fm_brut), format_tl(fm_res['toplam']), format_tl(fm_res['net'])],
-        ["UBGT Ücreti", format_tl(ubgt_brut), format_tl(u_res['toplam']), format_tl(u_res['net'])],
-        ["**GENEL TOPLAM**", "**"+format_tl(g_brut)+"**", "**"+format_tl(g_kes)+"**", "**"+format_tl(g_net)+"**"]
+    df_icmal = pd.DataFrame([["Kıdem Tazminatı", format_tl(b_kidem), format_tl(k_res['toplam']), format_tl(k_res['net'])], ["İhbar Tazminatı", format_tl(b_ihbar), format_tl(i_res['toplam']), format_tl(i_res['net'])], ["Yıllık İzin Ücreti", format_tl(b_izin), format_tl(z_res['toplam']), format_tl(z_res['net'])], ["Fazla Mesai Ücreti", format_tl(fm_brut), format_tl(fm_res['toplam']), format_tl(fm_res['net'])], ["UBGT Ücreti", format_tl(ubgt_brut), format_tl(u_res['toplam']), format_tl(u_res['net'])], ["**GENEL TOPLAM**", format_tl(g_brut), format_tl(g_kes), format_tl(g_net)]], columns=["Alacak Kalemi", "Brüt Tutar", "Kesintiler", "Net Ödenecek"])
+    st.table(df_icmal)
+
+    # WORD OLUŞTURMA VE BUTON
+    sections = [
+        ("3. ÜCRET TESPİTLERİ", df_ucret),
+        ("4. KIDEM HESABI", df_kidem),
+        ("SONUÇ VE İCMAL", df_icmal)
     ]
-    st.table(pd.DataFrame(icmal_data, columns=["Alacak Kalemi", "Brüt Tutar", "Kesintiler", "Net Ödenecek"]))
+    docx_bytes = create_docx(isim, sections)
+    st.download_button(label="📥 Bilirkişi Raporunu Word Olarak İndir", data=docx_bytes, file_name=f"Rapor_{isim}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
